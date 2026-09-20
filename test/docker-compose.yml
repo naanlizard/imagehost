@@ -1,0 +1,58 @@
+name: imagehost-e2e
+
+services:
+  imagehost:
+    build: ..
+    image: imagehost:e2e
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 100
+    mem_limit: 512m
+    networks: [backend]
+    environment:
+      BASE_URL: http://${E2E_IP}
+    volumes:
+      - data:/data
+
+  imgproxy:
+    image: ghcr.io/imgproxy/imgproxy:v4.0.15@sha256:4ec770c72bffea108ba404dc86d3be88e6bf4fd58958782770ff890cca4c7a82
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 200
+    mem_limit: 1g
+    networks: [backend]
+    environment:
+      IMGPROXY_LOCAL_FILESYSTEM_ROOT: /data
+      IMGPROXY_ALLOWED_SOURCES: local://
+      IMGPROXY_ONLY_PRESETS: "true"
+      IMGPROXY_PRESETS: w640=width:640,w960=width:960,w1280=width:1280,w1920=width:1920,w2560=width:2560,avif=format:avif/quality:90,webp=format:webp/quality:95
+      IMGPROXY_MAX_SRC_RESOLUTION: 100
+      IMGPROXY_MAX_ANIMATION_FRAME_RESOLUTION: 100
+    volumes:
+      - data:/data:ro
+
+  nginx:
+    image: nginx:1.30.5-alpine@sha256:a5f2157a0302eb0c5e300415effb63a9e70ed1eb9c107283819bf6d149ab607c
+    depends_on: [imagehost, imgproxy]
+    networks:
+      front:
+        ipv4_address: ${E2E_IP}
+      backend: {}
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../deploy/imagehost-locations.conf:/etc/nginx/imagehost-locations.conf:ro
+      - ./tmp/htpasswd:/etc/nginx/imagehost.htpasswd:ro
+      - data:/data:ro
+
+networks:
+  front:
+    ipam:
+      config:
+        - subnet: ${E2E_SUBNET}
+  backend:
+    internal: true
+
+volumes:
+  data:

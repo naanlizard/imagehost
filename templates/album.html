@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{if .Title}}{{.Title}}{{else if .Album}}Album{{else}}Image{{end}}</title>
+{{template "icon"}}
+<style>
+:root{color-scheme:dark}
+body{margin:0;background:#15161a;color:#e9e7e1;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1140px;margin:0 auto;padding:80px 70px}
+header{margin-bottom:56px;padding-bottom:28px;border-bottom:1px solid #30323a}
+h1{margin:0 0 10px;font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;font-size:44px;line-height:1.15;font-weight:500;overflow-wrap:anywhere}
+.count,.num,.side a{color:#a2a5ad}
+.count{font-size:15px}
+section{display:grid;grid-template-columns:minmax(0,800px) minmax(0,300px);gap:40px;align-items:start;margin-bottom:56px}
+img,video{display:block;max-width:100%;max-height:92vh;height:auto;border-radius:2px;background:#262830}
+video{width:100%;max-width:1280px;aspect-ratio:16/9;object-fit:contain}
+.side{display:flex;flex-direction:column;gap:10px;padding-top:2px}
+.num{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:13px;letter-spacing:.04em}
+p{margin:0;font-size:15px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.side a{font-size:14px;padding:10px 0}
+@media (max-width:900px){
+main{padding:28px 16px}
+header{margin-bottom:32px;padding-bottom:20px}
+h1{font-size:28px}
+section{grid-template-columns:minmax(0,1fr);gap:12px;margin-bottom:36px}
+}
+</style>
+</head>
+<body>
+<main>
+{{if .Album}}<header>
+{{if .Title}}<h1>{{.Title}}</h1>
+{{end}}<div class="count">{{.Count}} items</div>
+</header>
+{{end}}{{range .Items}}<section>
+{{if .Video}}<video controls preload="metadata" src="/i/{{.File}}"></video>
+{{else}}<a href="/i/{{.File}}" target="_blank" rel="noopener">{{if .WebP}}<picture><source type="image/avif" srcset="{{.AVIF}}" sizes="{{.Sizes}}"><source type="image/webp" srcset="{{.WebP}}" sizes="{{.Sizes}}">{{end}}<img loading="lazy" src="/i/{{.File}}" alt=""{{if .Height}} width="{{.Width}}" height="{{.Height}}" style="width:min(100%,{{.Width}}px,calc(92vh*{{.Width}}/{{.Height}}))"{{end}}>{{if .WebP}}</picture>{{end}}</a>
+{{end}}<div class="side">
+{{if $.Album}}<div class="num">{{.Num}}</div>
+{{end}}{{if .Description}}<p>{{.Description}}</p>
+{{end}}{{if .Video}}<a href="/i/{{.File}}" target="_blank" rel="noopener">open video file</a>
+{{end}}</div>
+</section>
+{{end}}</main>
+</body>
+</html>

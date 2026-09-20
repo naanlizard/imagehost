@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Edit upload</title>
+{{template "icon"}}
+{{template "style"}}
+</head>
+<body>
+<main>
+<div class="listhead">
+<h1>{{if .Album}}Edit album{{else}}Edit upload{{end}}</h1>
+<a class="button" href="/">Back to uploads</a>
+</div>
+<div class="panel">
+<a class="mono" href="{{.Link}}" target="_blank" rel="noopener">{{.Link}}</a>
+</div>
+<form id="edit" class="stack" method="post" action="/edit/{{.Token}}">
+<button class="offscreen" name="action" value="save" tabindex="-1" aria-hidden="true">Save</button>
+<div class="field">
+<label for="title">Title (optional)</label>
+<input id="title" name="title" type="text" maxlength="200" class="narrow" value="{{.Title}}">
+</div>
+{{range .Items}}<div class="panel item">
+<div class="preview">{{if .Video}}<video controls preload="metadata" src="/i/{{.File}}"></video>{{else}}<picture><source type="image/avif" srcset="/r/640/avif/{{.File}}"><img loading="lazy" src="/r/640/webp/{{.File}}" alt=""></picture>{{end}}</div>
+<div class="stack grow">
+<input type="hidden" name="file" value="{{.File}}">
+<label for="desc-{{.Index}}">Description for item {{.Num}} (optional)</label>
+<textarea id="desc-{{.Index}}" name="desc" maxlength="5000">{{.Description}}</textarea>
+<a class="mono hint" href="{{.Link}}" target="_blank" rel="noopener">{{.Link}}</a>
+<div class="row">
+{{if not .First}}<button name="action" value="up:{{.Index}}">Move up</button>
+{{end}}{{if not .Last}}<button name="action" value="down:{{.Index}}">Move down</button>
+{{end}}<span class="grow"></span>
+{{if $.Album}}<button class="danger" name="action" value="remove:{{.Index}}">Remove</button>
+{{end}}</div>
+</div>
+</div>
+{{end}}</form>
+
+<form class="panel stack" method="post" action="/upload" enctype="multipart/form-data">
+<input type="hidden" name="post" value="{{.Token}}">
+<div class="field">
+<label for="more">Add more files</label>
+<input id="more" name="files" type="file" multiple required accept="image/*,video/mp4,video/webm">
+<div class="hint">Choose files or drop them on the box.</div>
+</div>
+<div class="row"><button type="submit">Add to album</button></div>
+</form>
+
+<div class="listhead bar">
+<button class="primary" form="edit" name="action" value="save">Save changes</button>
+<form class="row" method="post" action="/delete/{{.Token}}">
+<label class="check"><input type="checkbox" name="confirm" value="yes" required> Delete this upload and its files</label>
+<button class="danger" type="submit">Delete</button>
+</form>
+</div>
+</main>
+</body>
+</html>

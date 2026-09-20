@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Upload</title>
+{{template "icon"}}
+{{template "style"}}
+</head>
+<body>
+<main>
+<h1>Upload</h1>
+<form class="panel stack" method="post" action="/upload" enctype="multipart/form-data">
+<div class="field">
+<label for="files">Files</label>
+<input id="files" name="files" type="file" multiple required accept="image/*,video/mp4,video/webm">
+<div class="hint">Choose files or drop them on the box. JPEG, PNG, GIF, WebP, AVIF, MP4, WebM. One file makes a single page. Several files make an album.</div>
+</div>
+<div class="field">
+<label for="title">Title (optional)</label>
+<input id="title" name="title" type="text" maxlength="200" class="narrow">
+</div>
+<div class="row">
+<button class="primary" type="submit">Upload</button>
+<span class="hint">The next page shows the link and takes descriptions.</span>
+</div>
+</form>
+
+<div class="listhead">
+<h2>Previous uploads</h2>
+<span class="hint">{{.Total}} uploads, newest first</span>
+</div>
+<div class="cards">
+{{range .Posts}}<article class="card">
+<a class="preview" href="/edit/{{.Token}}">{{if .Video}}<video preload="metadata" muted src="/i/{{.Preview}}"></video>{{else}}<picture><source type="image/avif" srcset="/r/640/avif/{{.Preview}}"><img loading="lazy" src="/r/640/webp/{{.Preview}}" alt=""></picture>{{end}}</a>
+<div>
+<div class="title{{if not .Title}} muted{{end}}">{{if .Title}}{{.Title}}{{else}}Untitled{{end}}</div>
+<div class="hint">{{.Count}} {{if eq .Count 1}}item{{else}}items{{end}}, {{.Date}}</div>
+</div>
+<div class="row">
+<a class="button grow" href="{{.Link}}" target="_blank" rel="noopener">Open</a>
+<a class="button" href="/edit/{{.Token}}">Edit</a>
+</div>
+</article>
+{{end}}</div>
+</main>
+</body>
+</html>
