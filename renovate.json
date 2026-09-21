@@ -1,6 +1,14 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", "docker:pinDigests", "helpers:pinGitHubActionDigests"],
-  "ignorePresets": [":ignoreModulesAndTests"],
-  "minimumReleaseAge": "3 days"
+  "extends": [
+    "config:recommended",
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "ignorePresets": [
+    ":ignoreModulesAndTests"
+  ],
+  "minimumReleaseAge": "3 days",
+  "automerge": true,
+  "automergeStrategy": "squash"
 }
