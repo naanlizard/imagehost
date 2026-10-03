@@ -51,6 +51,11 @@ func uploadReq(fields map[string]string, files ...upFile) *http.Request {
 }
 
 func do(a *App, r *http.Request) *httptest.ResponseRecorder {
+	return doAs(a, r, "alice")
+}
+
+func doAs(a *App, r *http.Request, user string) *httptest.ResponseRecorder {
+	r.Header.Set(userHeader, user)
 	w := httptest.NewRecorder()
 	a.Routes().ServeHTTP(w, r)
 	return w
@@ -87,8 +92,8 @@ func editForm(p Post, action string) url.Values {
 
 func TestUploadCreatesPostAndFile(t *testing.T) {
 	a, dir := newTestApp(t)
-	p := mustUpload(t, a, map[string]string{"title": " Trip "}, upFile{"../../evil.svg", jpegBytes})
-	if p.Title != "Trip" || len(p.Items) != 1 {
+	p := mustUpload(t, a, map[string]string{"title": " Trip ", "owner": "bob"}, upFile{"../../evil.svg", jpegBytes})
+	if p.Title != "Trip" || p.Owner != "alice" || len(p.Items) != 1 {
 		t.Fatalf("post: %+v", p)
 	}
 	name := p.Items[0].File
@@ -292,13 +297,13 @@ func TestManageResponsesCarrySecurityHeaders(t *testing.T) {
 	}
 }
 
-func TestHomeListsEveryPostNewestFirst(t *testing.T) {
+func TestHomeAllListsEveryPostNewestFirst(t *testing.T) {
 	a, _ := newTestApp(t)
 	for i := 0; i < 30; i++ {
 		file := fmt.Sprintf("%032x.jpg", i)
 		a.store.Put(Post{Token: newToken(), Created: time.Unix(int64(i), 0).UTC(), Items: []Item{{File: file}}})
 	}
-	body := do(a, httptest.NewRequest("GET", "/", nil)).Body.String()
+	body := do(a, httptest.NewRequest("GET", "/?view=all", nil)).Body.String()
 	if got := strings.Count(body, `<article class="card">`); got != 30 {
 		t.Fatalf("%d cards, want 30", got)
 	}
@@ -306,6 +311,124 @@ func TestHomeListsEveryPostNewestFirst(t *testing.T) {
 	newest := all[0].Token
 	if first := strings.Index(body, "/edit/"); body[first+6:first+38] != newest {
 		t.Fatal("newest post is not the first card")
+	}
+}
+
+func TestManageRequiresAuthenticatedUsername(t *testing.T) {
+	a, dir := newTestApp(t)
+	for _, r := range []*http.Request{
+		httptest.NewRequest("GET", "/?view=all", nil),
+		uploadReq(nil, upFile{"a.jpg", jpegBytes}),
+		httptest.NewRequest("POST", "/edit/"+newToken(), nil),
+		httptest.NewRequest("POST", "/delete/"+newToken(), nil),
+	} {
+		r.SetBasicAuth("alice", "password")
+		w := doAs(a, r, "")
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s without proxy username: %d", r.Method, r.URL, w.Code)
+		}
+	}
+	for _, sub := range []string{"files", "posts", "tmp"} {
+		entries, err := os.ReadDir(filepath.Join(dir, sub))
+		if err != nil || len(entries) != 0 {
+			t.Errorf("%s changed without username: %v, %v", sub, entries, err)
+		}
+	}
+}
+
+func TestHomeFiltersByUsername(t *testing.T) {
+	a, _ := newTestApp(t)
+	owners := []string{"alice", "bob", "", "alice"}
+	posts := make([]Post, len(owners))
+	for i, owner := range owners {
+		posts[i] = Post{Token: newToken(), Owner: owner, Created: time.Unix(int64(i), 0), Items: []Item{{File: fileA}}}
+		if err := a.store.Put(posts[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		user, path string
+		want       []int
+	}{
+		{"alice", "/", []int{3, 0}},
+		{"bob", "/", []int{1}},
+		{"Alice", "/", nil},
+		{"alice", "/?view=unknown", []int{3, 0}},
+		{"alice", "/?view=all", []int{3, 2, 1, 0}},
+		{"bob", "/?view=all", []int{3, 2, 1, 0}},
+	} {
+		t.Run(tc.user+tc.path, func(t *testing.T) {
+			w := doAs(a, httptest.NewRequest("GET", tc.path, nil), tc.user)
+			body := w.Body.String()
+			if w.Code != http.StatusOK || strings.Count(body, `<article class="card">`) != len(tc.want) {
+				t.Fatalf("unexpected listing: %d %s", w.Code, body)
+			}
+			previous := -1
+			for _, i := range tc.want {
+				at := strings.Index(body, `/edit/`+posts[i].Token)
+				if at <= previous {
+					t.Errorf("post %s absent or out of order", posts[i].Token)
+				}
+				previous = at
+			}
+			if !strings.Contains(body, fmt.Sprintf("%d uploads, newest first", len(tc.want))) {
+				t.Error("count does not match the filtered view")
+			}
+			if len(tc.want) == 0 && !strings.Contains(body, `href="/?view=all"`) {
+				t.Error("empty view has no way to find older posts")
+			}
+		})
+	}
+}
+
+func TestAppendingAndEditingKeepTheOwner(t *testing.T) {
+	a, _ := newTestApp(t)
+	p := mustUpload(t, a, nil, upFile{"a.jpg", jpegBytes})
+	w := doAs(a, uploadReq(map[string]string{"post": p.Token, "owner": "bob"}, upFile{"b.png", pngBytes}), "bob")
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("append: %d %s", w.Code, w.Body)
+	}
+	p, _ = a.store.Get(p.Token)
+	if p.Owner != "alice" || len(p.Items) != 2 {
+		t.Fatalf("appending changed owner: %+v", p)
+	}
+	if w := postForm(a, "/edit/"+p.Token, editForm(p, "down:0")); w.Code != http.StatusSeeOther {
+		t.Fatalf("edit: %d", w.Code)
+	}
+	p, _ = a.store.Get(p.Token)
+	if p.Owner != "alice" {
+		t.Fatalf("editing without an owner field changed owner: %q", p.Owner)
+	}
+}
+
+func TestAssignAndReassignAnOlderPost(t *testing.T) {
+	a, _ := newTestApp(t)
+	p := mustUpload(t, a, nil, upFile{"a.jpg", jpegBytes})
+	p.Owner = ""
+	if err := a.store.Put(p); err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range []string{"bob", "alice", ""} {
+		form := editForm(p, "save")
+		form.Set("owner", " "+owner+" ")
+		w := postForm(a, "/edit/"+p.Token, form)
+		if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/edit/"+p.Token {
+			t.Fatalf("assign: %d %s", w.Code, w.Body)
+		}
+		got, err := a.store.Get(p.Token)
+		if err != nil || got.Owner != owner || got.Token != p.Token || got.Items[0] != p.Items[0] {
+			t.Fatalf("assigned post: %+v, %v", got, err)
+		}
+		for _, user := range []string{"alice", "bob"} {
+			body := doAs(a, httptest.NewRequest("GET", "/", nil), user).Body.String()
+			if strings.Contains(body, "/edit/"+p.Token) != (owner == user) {
+				t.Errorf("post owned by %q in %q's view", owner, user)
+			}
+		}
+		page, err := os.ReadFile(a.store.PagePath(p.Token))
+		if err != nil || strings.Contains(string(page), "alice") || strings.Contains(string(page), "bob") {
+			t.Fatalf("owner leaked into shared page: %v", err)
+		}
 	}
 }
 

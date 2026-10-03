@@ -5,6 +5,7 @@ cd "$(dirname "$0")"
 export E2E_SUBNET=10.213.77.0/29 E2E_IP=10.213.77.2
 BASE=http://$E2E_IP
 AUTH=(-u e2e:e2e-password)
+OTHER_AUTH=(-u other:other-password)
 TMP=tmp
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -24,6 +25,7 @@ files_on() { curl -s "$BASE/a/$1" | grep -o '/i/[0-9a-f]\{32\}\.[a-z0-9]*' | sor
 rm -rf "$TMP"
 mkdir -p "$TMP"
 printf 'e2e:%s\n' "$(openssl passwd -apr1 e2e-password)" > "$TMP/htpasswd"
+printf 'other:%s\n' "$(openssl passwd -apr1 other-password)" >> "$TMP/htpasswd"
 trap 'docker compose down -v >/dev/null 2>&1' EXIT
 docker compose down -v >/dev/null 2>&1 || true
 docker compose up -d --build --wait
@@ -45,10 +47,26 @@ check "home without login" 401 "$(status "$BASE/")"
 check "home with login" 200 "$(status "${AUTH[@]}" "$BASE/")"
 check "home is not cacheable" "private, no-store, no-transform" "$(header Cache-Control "${AUTH[@]}" "$BASE/")"
 
-TOKEN=$(upload -F 'title=E2E <b>album</b>' -F "files=@$TMP/plain.jpg" -F "files=@$TMP/plain.png")
+TOKEN=$(upload -H 'X-Remote-User: other' -F 'owner=other' -F 'title=E2E <b>album</b>' -F "files=@$TMP/plain.jpg" -F "files=@$TMP/plain.png")
 [[ $TOKEN =~ ^[0-9a-f]{32}$ ]] || fail "upload returned no token: $TOKEN"
 JPG=$(files_on "$TOKEN" | grep '\.jpg$')
 PNG=$(files_on "$TOKEN" | grep '\.png$')
+
+OTHER_TOKEN=$(header Location "${OTHER_AUTH[@]}" -F 'title=Other upload' -F "files=@$TMP/plain.png" "$BASE/upload" | sed 's#^/edit/##')
+[[ $OTHER_TOKEN =~ ^[0-9a-f]{32}$ ]] || fail "second login upload returned no token"
+curl -sf "${AUTH[@]}" "$BASE/" > "$TMP/mine.html"
+curl -sf "${OTHER_AUTH[@]}" "$BASE/" > "$TMP/other.html"
+grep -q "/edit/$TOKEN" "$TMP/mine.html" || fail "upload not assigned to authenticated user"
+if grep -q "/edit/$OTHER_TOKEN" "$TMP/mine.html"; then fail "my uploads includes another user's post"; fi
+grep -q "/edit/$OTHER_TOKEN" "$TMP/other.html" || fail "second user's own post is missing"
+if grep -q "/edit/$TOKEN" "$TMP/other.html"; then fail "client supplied upload owner was trusted"; fi
+curl -sf "${AUTH[@]}" -H 'X-Remote-User: other' "$BASE/" > "$TMP/spoof.html"
+grep -q "/edit/$TOKEN" "$TMP/spoof.html" || fail "client username header changed the authenticated view"
+if grep -q "/edit/$OTHER_TOKEN" "$TMP/spoof.html"; then fail "nginx did not overwrite client username"; fi
+curl -sf "${OTHER_AUTH[@]}" "$BASE/?view=all" > "$TMP/all.html"
+grep -q "/edit/$TOKEN" "$TMP/all.html" || fail "all uploads hides the first user's post"
+grep -q "/edit/$OTHER_TOKEN" "$TMP/all.html" || fail "all uploads hides the second user's post"
+echo "ok: usernames assign and filter uploads; nginx ignores forged usernames"
 
 check "album page" 200 "$(status "$BASE/a/$TOKEN")"
 check "album cache header" "no-cache, no-transform" "$(header Cache-Control "$BASE/a/$TOKEN")"
@@ -145,6 +163,16 @@ docker compose restart imagehost >/dev/null
 curl -s -o /dev/null --retry 30 --retry-connrefused --retry-all-errors --retry-delay 1 -f "${AUTH[@]}" "$BASE/"
 curl -s "${AUTH[@]}" "$BASE/" | grep -q "/edit/$TOKEN" || fail "post missing from home after restart"
 echo "ok: posts reload after restart"
+
+OTHER_FILE=$(files_on "$OTHER_TOKEN")
+check "reassign owner" 303 "$(status "${OTHER_AUTH[@]}" --data-urlencode 'title=Other upload' --data-urlencode 'owner=e2e' --data-urlencode 'action=save' \
+  --data-urlencode "file=${OTHER_FILE#/i/}" --data-urlencode 'desc=' "$BASE/edit/$OTHER_TOKEN")"
+curl -sf "${AUTH[@]}" "$BASE/" > "$TMP/reassigned.html"
+grep -q "/edit/$OTHER_TOKEN" "$TMP/reassigned.html" || fail "reassigned post missing from new owner's view"
+curl -sf "${OTHER_AUTH[@]}" "$BASE/" > "$TMP/previous-owner.html"
+if grep -q "/edit/$OTHER_TOKEN" "$TMP/previous-owner.html"; then fail "reassigned post still in previous owner's view"; fi
+check "reassigned share link" 200 "$(status "$BASE/a/$OTHER_TOKEN")"
+echo "ok: changing owner moves the post without changing its public link"
 
 check "remove an item" 303 "$(status "${AUTH[@]}" --data-urlencode 'title=Edited' --data-urlencode 'action=remove:0' \
   --data-urlencode "file=${PNG#/i/}" --data-urlencode 'desc=' \

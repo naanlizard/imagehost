@@ -10,7 +10,10 @@
 </head>
 <body>
 <main>
+<div class="listhead">
 <h1>Upload</h1>
+<span class="hint">Signed in as {{.User}}</span>
+</div>
 <form class="panel stack" method="post" action="/upload" enctype="multipart/form-data">
 <div class="field">
 <label for="files">Files</label>
@@ -28,15 +31,21 @@
 </form>
 
 <div class="listhead">
-<h2>Previous uploads</h2>
+<h2>{{if .All}}All uploads{{else}}My uploads{{end}}</h2>
 <span class="hint">{{.Total}} uploads, newest first</span>
 </div>
+<nav class="row" aria-label="Upload view">
+<a class="button{{if not .All}} primary{{end}}" href="/"{{if not .All}} aria-current="page"{{end}}>My uploads</a>
+<a class="button{{if .All}} primary{{end}}" href="/?view=all"{{if .All}} aria-current="page"{{end}}>All uploads</a>
+</nav>
+{{if not .Posts}}<p class="hint">{{if .All}}No uploads yet.{{else}}No uploads assigned to you yet. Find older posts in <a href="/?view=all">All uploads</a> and edit their owner.{{end}}</p>{{end}}
 <div class="cards">
 {{range .Posts}}<article class="card">
 <a class="preview" href="/edit/{{.Token}}">{{if .Video}}<video preload="metadata" muted src="/i/{{.Preview}}"></video>{{else}}<picture><source type="image/avif" srcset="/r/640/avif/{{.Preview}}"><img loading="lazy" src="/r/640/webp/{{.Preview}}" alt=""></picture>{{end}}</a>
 <div>
 <div class="title{{if not .Title}} muted{{end}}">{{if .Title}}{{.Title}}{{else}}Untitled{{end}}</div>
 <div class="hint">{{.Count}} {{if eq .Count 1}}item{{else}}items{{end}}, {{.Date}}</div>
+{{if $.All}}<div class="hint">Owner: {{if .Owner}}{{.Owner}}{{else}}Unassigned{{end}}</div>{{end}}
 </div>
 <div class="row">
 <a class="button grow" href="{{.Link}}" target="_blank" rel="noopener">Open</a>

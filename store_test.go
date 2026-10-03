@@ -25,7 +25,7 @@ func TestStoreRoundTripAndReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	file := addFile(t, s, "jpg")
-	old := Post{Token: newToken(), Title: "old", Created: time.Unix(100, 0).UTC(), Items: []Item{{File: file, Description: "d"}}}
+	old := Post{Token: newToken(), Title: "old", Owner: "alice", Created: time.Unix(100, 0).UTC(), Items: []Item{{File: file, Description: "d"}}}
 	recent := Post{Token: newToken(), Title: "new", Created: time.Unix(200, 0).UTC(), Items: []Item{{File: addFile(t, s, "png")}}}
 	for _, p := range []Post{old, recent} {
 		if err := s.Put(p); err != nil {
@@ -38,8 +38,11 @@ func TestStoreRoundTripAndReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := s2.Get(old.Token)
-	if err != nil || got.Title != "old" || len(got.Items) != 1 || got.Items[0] != old.Items[0] || !got.Created.Equal(old.Created) {
+	if err != nil || got.Title != "old" || got.Owner != "alice" || len(got.Items) != 1 || got.Items[0] != old.Items[0] || !got.Created.Equal(old.Created) {
 		t.Fatalf("reload mismatch: %+v", got)
+	}
+	if got, err := s2.Get(recent.Token); err != nil || got.Owner != "" {
+		t.Fatalf("post without owner: %+v, %v", got, err)
 	}
 	list, err := s2.List()
 	if err != nil || len(list) != 2 || list[0].Token != recent.Token {

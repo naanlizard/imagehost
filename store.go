@@ -29,6 +29,7 @@ type Item struct {
 type Post struct {
 	Token   string    `json:"token"`
 	Title   string    `json:"title"`
+	Owner   string    `json:"owner,omitempty"`
 	Created time.Time `json:"created"`
 	Items   []Item    `json:"items"`
 }

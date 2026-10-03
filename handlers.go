@@ -18,6 +18,7 @@ const (
 	maxUpload   = 100 << 20
 	manageCSP   = "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 	maxFormSize = 1 << 20
+	userHeader  = "X-Remote-User"
 )
 
 var errUnsupported = errors.New("unsupported file type; accepted: JPEG, PNG, GIF, WebP, AVIF, MP4, WebM")
@@ -46,6 +47,10 @@ func guard(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		// no-referrer would make browsers send "Origin: null" on form posts, which the cross-origin check refuses.
 		h.Set("Referrer-Policy", "same-origin")
+		if r.Header.Get(userHeader) == "" {
+			http.Error(w, "authenticated username required", http.StatusUnauthorized)
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -101,18 +106,20 @@ func render(w http.ResponseWriter, name string, data any) {
 }
 
 type cardView struct {
-	Token, Title, Date, Preview, Link string
-	Count                             int
-	Video                             bool
+	Token, Title, Owner, Date, Preview, Link string
+	Count                                    int
+	Video                                    bool
 }
 
 type homeView struct {
 	Posts []cardView
 	Total int
+	User  string
+	All   bool
 }
 
 func (a *App) card(p Post) cardView {
-	c := cardView{Token: p.Token, Title: p.Title, Date: p.Created.Format("2006-01-02"), Link: a.baseURL + "/a/" + p.Token, Count: len(p.Items)}
+	c := cardView{Token: p.Token, Title: p.Title, Owner: p.Owner, Date: p.Created.Format("2006-01-02"), Link: a.baseURL + "/a/" + p.Token, Count: len(p.Items)}
 	if len(p.Items) > 0 {
 		c.Preview = p.Items[0].File
 		c.Video = isVideo(c.Preview)
@@ -129,10 +136,13 @@ func (a *App) home(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not read the posts", http.StatusInternalServerError)
 		return
 	}
-	v := homeView{Total: len(all)}
+	v := homeView{User: r.Header.Get(userHeader), All: r.URL.Query().Get("view") == "all"}
 	for _, p := range all {
-		v.Posts = append(v.Posts, a.card(p))
+		if v.All || p.Owner == v.User {
+			v.Posts = append(v.Posts, a.card(p))
+		}
 	}
+	v.Total = len(v.Posts)
 	render(w, "home.html", v)
 }
 
@@ -226,7 +236,7 @@ func (a *App) upload(w http.ResponseWriter, r *http.Request) {
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	p := Post{Token: newToken(), Title: title, Created: time.Now().UTC()}
+	p := Post{Token: newToken(), Title: title, Owner: r.Header.Get(userHeader), Created: time.Now().UTC()}
 	if target != "" {
 		var err error
 		if p, err = a.store.Get(target); err != nil {
@@ -254,9 +264,9 @@ type editItem struct {
 }
 
 type editView struct {
-	Token, Title, Link string
-	Album              bool
-	Items              []editItem
+	Token, Title, Owner, User, Link string
+	Album                           bool
+	Items                           []editItem
 }
 
 func (a *App) editPage(w http.ResponseWriter, r *http.Request) {
@@ -267,7 +277,7 @@ func (a *App) editPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	v := editView{Token: p.Token, Title: p.Title, Link: a.baseURL + "/a/" + p.Token, Album: len(p.Items) > 1}
+	v := editView{Token: p.Token, Title: p.Title, Owner: p.Owner, User: r.Header.Get(userHeader), Link: a.baseURL + "/a/" + p.Token, Album: len(p.Items) > 1}
 	for i, it := range p.Items {
 		v.Items = append(v.Items, editItem{
 			Index: i, Num: fmt.Sprintf("%02d", i+1), File: it.File, Link: a.baseURL + "/i/" + it.File,
@@ -311,6 +321,9 @@ func (a *App) editSave(w http.ResponseWriter, r *http.Request) {
 		items = append(items, it)
 	}
 	p.Title = strings.TrimSpace(r.PostForm.Get("title"))
+	if r.PostForm.Has("owner") {
+		p.Owner = strings.TrimSpace(r.PostForm.Get("owner"))
+	}
 
 	verb, arg, _ := strings.Cut(r.PostForm.Get("action"), ":")
 	i, err := strconv.Atoi(arg)

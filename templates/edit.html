@@ -23,6 +23,11 @@
 <label for="title">Title (optional)</label>
 <input id="title" name="title" type="text" maxlength="200" class="narrow" value="{{.Title}}">
 </div>
+<div class="field">
+<label for="owner">Owner</label>
+<input id="owner" name="owner" type="text" class="narrow" value="{{.Owner}}" autocomplete="off" autocapitalize="none" spellcheck="false">
+<div class="hint">Use the owner's login name. You are signed in as {{.User}}. Leave blank for unassigned uploads.</div>
+</div>
 {{range .Items}}<div class="panel item">
 <div class="preview">{{if .Video}}<video controls preload="metadata" src="/i/{{.File}}"></video>{{else}}<picture><source type="image/avif" srcset="/r/640/avif/{{.File}}"><img loading="lazy" src="/r/640/webp/{{.File}}" alt=""></picture>{{end}}</div>
 <div class="stack grow">
